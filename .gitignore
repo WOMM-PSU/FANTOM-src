@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+logs/
+.env
+.env.*
+!.env.example
+.freebuff/
+.DS_Store
