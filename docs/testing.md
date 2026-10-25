@@ -21,12 +21,15 @@ ephemeral port with real `ws` clients and real `fetch` calls. No sockets are moc
 | Config validation and HTTP schemas | `packages/shared/src/config.test.ts` | 6 |
 | Start eligibility rules | `packages/shared/src/startRules.test.ts` | 8 |
 | Client/server protocol schemas | `packages/shared/src/protocol.test.ts` | 6 |
+| Marker encoding/parsing and match scoping | `packages/shared/src/marker.test.ts` | 3 |
 | Match lifecycle, readiness, host transfer, sessions | `apps/server/src/lobby/manager.test.ts` | 7 |
+| Combat rules: ammo, reload, cooldown, damage, shield, respawn, scoring | `apps/server/src/lobby/combat.test.ts` | 9 |
+| Real two-client WebSocket shot and reconnect sync | `apps/server/tests/combat.test.ts` | 1 |
 | Two-client lobby sync and countdown | `apps/server/tests/lobby.test.ts` | 4 |
 | Join rules, idempotency, limits, CORS | `apps/server/tests/join.test.ts` | 4 |
 | Runtime config parsing | `apps/server/src/config.test.ts` | 3 |
 
-**Total: 45 passing tests.** Last run: 2026-10-24.
+**Total: 58 passing tests.** Last run: 2026-10-24.
 
 The manager tests use fake timers to prove:
 
@@ -37,6 +40,16 @@ The manager tests use fake timers to prove:
 - host transfer after the reconnect grace;
 - invalid session tokens are rejected;
 - a session resumed on a second socket closes the first with code 4001.
+
+The combat tests prove:
+
+- a valid camera shot consumes one round, applies damage, and broadcasts accepted/rejected events;
+- invalid evidence, self-targeting, spawn protection, reloading, cooldown, and manual fallback
+  restrictions are rejected without changing health;
+- an empty magazine starts the automatic reload and refills it only when the server timer completes;
+- shield absorbs before health and cannot go negative;
+- an elimination increments score exactly once, schedules a respawn, and respawn restores health;
+- the timer winner and draw cases are derived from server-owned scores.
 
 The integration tests prove:
 
@@ -61,24 +74,28 @@ on the same LAN.
    players with synchronized state.
 3. Select a 2-minute match in the host settings (this resets ready), then both players press
    "I'm ready". The host's Start button enables.
-4. The host starts. Both clients show the server countdown and then the live screen with the same
+4. The host starts. Both clients show the fullscreen countdown, then the camera HUD with the same
    `endsAt`-derived timer and all players initialized to 100 HP / alive.
-5. Reload the host page during the match. The session resumes from `sessionStorage`; there is still
-   exactly one host player.
-6. Let the timer expire. Both clients transition to the finished screen with the same "timer
-   expired" result and no fabricated score or winner.
+5. Enable practice targeting in the host settings before starting if the test browser has no camera.
+   Fire at the other player: the shooter shows ammo 12 → 11 and one hit toast; the target shows
+   HP 100 → 75, a red damage flash, and an incoming-fire toast. A rejected shot shows the server's
+   reason instead of applying damage.
+6. Reload the host page during the match. The session resumes from `sessionStorage`; there is still
+   exactly one host player and the HUD shows the server's current ammo/health.
+7. Open the in-match menu, scoreboard, and marker QR. The match keeps running; closing the marker
+   returns to the camera view. Let the timer expire. Both clients transition to the same results
+   screen with the server's winner/draw and score data, and the camera stops.
 7. Reload the finished view. The session resumes and the server still reports the finished result.
 8. Leave from the second tab. It returns home and the remaining client's player list drops to one.
 9. Try a stale/unknown join code, a join after the match has started, and an invalid session:
    explicit messages appear, no silent failure.
 
-Observed during this milestone: all of the above worked on the local machine with two isolated
-clients, including a 2-minute finished match and a rejected post-start join. Console showed only
-Next.js dev tools and HMR messages caused by restarting the dev server; there were no application
-errors in either client.
-
-This is **not** proof of physical-device compatibility or camera/GPS behavior. Those features are
-not implemented yet.
+Observed during this milestone: create/join, ready, countdown, the fullscreen camera HUD, a
+server-confirmed 25-damage hit synchronized to both clients, hit and incoming-damage feedback,
+ammunition decrement, eliminations and respawns, the scoreboard, the marker QR, and a timer-expired
+victory/defeat results pair all worked with two isolated clients. The Next.js dev restart briefly
+disconnected both tabs and they re-resumed the same players. This is **not** proof of physical
+device camera/orientation behavior; the camera feed in testing came from the browser test device.
 
 ## Gaps in automated coverage
 
@@ -89,21 +106,18 @@ not implemented yet.
   horizontal overflow on the finished screen.
 - No load/stress test for many rooms or simultaneous joins.
 - No reconnect test across a real network interruption, only close/resume with real sockets.
-- No camera, orientation, geolocation, or shot-validation tests, because the features do not exist.
+- No physical iOS/Android camera or orientation test, and no QR scan through a real camera at
+  distance, in glare, or with occlusion. Marker decoding and shot validation are tested with
+  synthetic evidence.
+- No geolocation or GPS arena tests, because that feature does not exist yet.
 
 ## Required tests before the next milestone is called done
 
-### Combat (Phase 4)
+### Combat hardening
 
-- firing interval boundaries, magazine depletion, automatic reload start/completion;
-- invalid shots consume nothing and apply no damage;
-- spawn protection blocks damage and firing;
-- shield absorbs before health and is capped;
-- simultaneous shots/eliminations cannot double-count;
-- eliminated players cannot fire, heal, or pick up;
-- FFA scoring and timer winner/last-standing rules;
-- reconnect preserves ammo/reload state;
-- results agree across all clients.
+Core rules are covered above. Still needed: two simultaneous shots against the same target,
+weapon switching/reload interactions once more than one weapon is available, pickup eligibility,
+and a physical-device aim test at real distances.
 
 ### GPS/arena (Phase 3)
 

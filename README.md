@@ -4,23 +4,32 @@
 >
 > Real-world movement. Camera-assisted aiming. GPS-based positioning. No dedicated hardware.
 
-## Current milestone: multiplayer lobby and match lifecycle
+## Current milestone: playable Free For All with a camera HUD
 
-This repository currently contains the first working vertical slice of FANTOM:
+This repository currently contains a complete lobby-to-results Free For All loop:
 
 - A host can create a match from a phone-sized web page.
 - Another player can join with a four-character code or QR link.
 - The lobby is synchronized across clients over a persistent WebSocket.
 - Players ready up and see each other's presence and connection state.
 - The host can choose Free For All and a match duration; the server validates settings.
-- The server owns the countdown, start, authoritative match timer, and end state.
+- The server owns the countdown, start, authoritative match timer, combat state, and results.
+- Once the match is live, the screen becomes a fullscreen camera view with a translucent HUD:
+  timer, health/shield, weapon, ammunition, reload progress, reticle, target lock, hit feedback,
+  scoreboard, and an in-match menu.
+- Players can show a match-scoped QR target marker; the camera detects markers locally and maps
+  them to live players. Camera frames never leave the device.
+- The server owns Pulse damage, fire intervals, ammunition, automatic reloads, spawn protection,
+  eliminations, respawns, scoring, and the winner/draw result.
 - Sessions survive a page reload through a tab-scoped session credential.
 - Disconnected players get a reconnect grace period and the host role transfers cleanly.
 - Rejected actions return explicit errors rather than silently changing the UI.
 
-**This is not yet a playable combat game.** Combat, weapons, shields, pickups, GPS boundaries,
-the minimap, camera marker detection, orientation fusion, scoring, and the Assassin and Team
-Deathmatch rule sets are still to be built. The active-match screen says so explicitly.
+Still to be built: GPS arena boundaries, the minimap, pickups, shields as a pickup, the Ravager and
+Viper in normal play, and the Assassin and Team Deathmatch rule sets. Those modes stay visible but
+disabled so the UI does not imply they work. A host can enable a clearly labeled practice-targeting
+fallback for devices without a usable camera or motion sensor; it is never presented as
+camera-assisted aiming.
 
 See [docs/roadmap.md](docs/roadmap.md) for the prioritized plan and
 [docs/architecture.md](docs/architecture.md) for the system design.
@@ -80,7 +89,7 @@ For any deployment:
 | `npm run dev` | Runs the game server and Next.js dev server together |
 | `npm run dev:server` | Game server with `tsx watch` |
 | `npm run dev:web` | Next.js on `0.0.0.0:3000` |
-| `npm run test` | Shared rules tests and server unit/integration tests |
+| `npm run test` | Shared rules tests and server unit/integration tests (`58` tests) |
 | `npm run typecheck` | Strict TypeScript across all workspaces |
 | `npm run build` | Production Next.js build |
 | `npm run verify` | Typecheck, tests, and production build |
@@ -112,21 +121,28 @@ Creating and joining a match happen over HTTP, which returns an unguessable per-
 token. The browser keeps that token in `sessionStorage` and opens a WebSocket, sending
 `RESUME_MATCH` to attach to the player. From then on the server sends full `MATCH_STATE`
 snapshots and accepts a small set of actions (`SET_READY`, `UPDATE_CONFIG`, `START_MATCH`,
-`LEAVE_MATCH`, `PING`). The server validates membership, phase, host role, configuration version,
-readiness, connection state, payload size, and message rate. Clients cannot set health, scores,
-phase, roles, or any other consequential state; those fields exist in the shared snapshot only as
-server-initialized values for the combat milestone.
+`REQUEST_SHOT`, `LEAVE_MATCH`, `PING`). A shot carries a target ID and aiming evidence; the
+server checks membership, phase, shooter state, weapon ownership, spawn protection, cooldown,
+reload, ammunition, target eligibility, marker identity, reticle centering, confidence,
+orientation presence, and range before it applies damage. Accepted shots broadcast
+`SHOT_ACCEPTED`, `DAMAGE_EVENT`, and (when applicable) `ELIMINATION_EVENT`; rejected shots
+broadcast `SHOT_REJECTED` with a reason. Clients cannot set health, ammunition, scores, phase, or
+any other consequential state; every value in the snapshot is derived by the server.
 
 ## Verified in this milestone
 
 - `npm run typecheck` passes for shared, server, and web.
-- `npm run test` passes: **45 tests** across shared rules and server behavior.
+- `npm run test` passes: **58 tests** across shared rules and server behavior.
 - `npm run build` produces a working Next.js production build.
-- Browser verification with two isolated client tabs: create, join via QR/code URL, synchronized
-  lobby, ready-up, server countdown, live server timer, reload/resume without a duplicate player,
-  leave/removal from both views, and a 2-minute match reaching the synchronized finished screen.
-- At a 390 × 844 viewport the finished-match layout has no horizontal overflow, and the primary
-  action button is full-width and 54 px tall.
+- Browser verification with two isolated client tabs: create, join via code and QR/code URL,
+  synchronized lobby, ready-up, server countdown, fullscreen active HUD with a live camera feed,
+  server-confirmed damage synchronized to both clients (HP 100 → 75), hit and incoming-damage
+  feedback, ammunition 12 → 11, spawn protection, eliminations and respawns, reconnect/resume
+  without a duplicate player, and a timer-expired match reaching the synchronized results screen.
+- A second browser run verified the in-match menu, scoreboard sheet, practice-targeting fallback,
+  marker QR overlay, and camera cleanup when the match ends.
+- At a 390 × 844 viewport the HUD has no horizontal overflow, the two lower status blocks do not
+  overlap, and every control sits inside the safe area.
 
 The automated tests use real HTTP and real WebSocket clients, not mocked sockets. See
 [docs/testing.md](docs/testing.md).
@@ -135,17 +151,23 @@ The automated tests use real HTTP and real WebSocket clients, not mocked sockets
 
 ### Combat and game modes
 
-Only Free For All is selectable. The match initializes health and spawn-protection fields, but
-there is no firing, damage, ammunition, reload, shield, elimination, scoring, or winner logic yet.
-Assassin and Team Deathmatch are visible as disabled options so the UI does not imply they work.
+Only Free For All is selectable. Free For All currently uses the Pulse only, with respawns, no
+pickups, and no shield source, so the shield meter reads zero unless combat state supplies it.
+The Ravager and Viper are defined in shared configuration but are not granted during normal play
+until weapon caches exist. Assassin and Team Deathmatch are visible as disabled options so the UI
+does not imply they work.
 
 ### Camera and orientation
 
 Camera access requires HTTPS (or localhost). iOS Safari additionally requires
 `DeviceOrientationEvent.requestPermission()` from a user gesture, and sensor coordinate frames
-differ between devices. Camera marker detection and orientation fusion are **not implemented**;
-no part of this build claims camera-assisted aiming works. The next phase must test on real iOS
-and Android hardware before the feature is described as functional.
+differ between devices. The client decodes match QR markers locally with `jsQR` and the server
+re-checks marker identity, reticle offset, confidence, and orientation presence. Full bearing
+fusion (comparing compass heading with a GPS-derived target bearing) is not implemented because
+there is no GPS arena yet. Marker detection has only been exercised with a browser test feed, not
+on physical iOS or Android hardware; real cameras, glare, marker size, and occlusion still need
+device testing. When the camera or motion sensor is unavailable, the HUD says so and offers the
+host-enabled practice fallback instead of pretending aim lock is working.
 
 ### GPS
 
@@ -156,10 +178,11 @@ indoor demos. No simulated position data is currently presented as live GPS.
 
 ### Shot validation and anti-cheat
 
-The eventual hybrid aiming model relies partly on client-reported camera evidence, which a
-modified client can forge. Server-side range, target eligibility, phase, cooldown, and rate rules
-reduce mistakes but are not cryptographic proof of a real-world hit. This build makes no
-anti-cheat claim.
+The hybrid aiming model relies partly on client-reported camera evidence, which a modified client
+can forge. Server-side target eligibility, phase, cooldown, ammunition, marker identity, reticle
+tolerance, confidence, orientation presence, and range rules reduce mistakes but are not
+cryptographic proof of a real-world hit. This build makes no anti-cheat claim, and occlusion is
+approximated only by whether a marker was visible to the camera.
 
 ### Infrastructure
 

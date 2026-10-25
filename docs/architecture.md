@@ -3,8 +3,9 @@
 ## Scope of this document
 
 This describes the code that exists today: the multiplayer lobby, server-controlled match
-lifecycle, and the shared protocol. Combat, GPS, minimap, and camera aiming are future work; their
-expected integration points are called out, but they are not implemented.
+lifecycle, authoritative Free For All combat, the camera-assisted aim pipeline, and the fullscreen
+HUD. GPS arena boundaries, the minimap, pickups, and the Assassin/Team Deathmatch rules are future
+work; their expected integration points are called out, but they are not implemented.
 
 ## Components
 
@@ -13,8 +14,8 @@ expected integration points are called out, but they are not implemented.
 │ Phone browser                │          │ Game server (:4000)            │
 │                              │          │                                │
 │ Next.js / React UI            │  HTTP    │ POST /api/matches              │
-│  - landing, join, match       │ ───────▶ │ POST /api/matches/:code/join   │
-│  - sessionStorage credentials │ ◀─────── │ GET  /healthz                  │
+│  - landing, lobby, camera HUD │ ───────▶ │ POST /api/matches/:code/join   │
+│  - local marker detection     │ ◀─────── │ GET  /healthz                  │
 │                              │          │                                │
 │ Shared Zod protocol           │  WSS     │ /ws                            │
 │  - runtime validation         │ ◀──────▶ │  MatchManager (authority)      │
@@ -62,6 +63,7 @@ consequential mutation and may only request actions:
 | `SET_READY` | Membership, `lobby` phase, current `configVersion` |
 | `UPDATE_CONFIG` | Membership, host role, `lobby` phase, Zod-validated config, playable mode |
 | `START_MATCH` | Host role, `lobby` phase, current config version, connected players, all ready, minimum players |
+| `REQUEST_SHOT` | Membership, `active` phase, shooter alive, spawn lock, weapon, reload, ammo, fire interval, target eligibility, marker identity, reticle offset, confidence, orientation presence, range |
 | `LEAVE_MATCH` | Membership; host transfer if needed |
 | `PING` | Always allowed, including before authentication |
 
@@ -83,8 +85,12 @@ lobby ──START_MATCH (host, valid)──▶ countdown ──server timer─�
 - Active phase sets `startedAt`/`endsAt` from server time and initializes every player's health,
   status, role, weapon, ammo, and spawn-protection values. Only Free For All role/weapon
   initialization is defined in this milestone.
-- Finished phase records `finishedAt` and `endReason: "timer_expired"`. No winner or score is
-  invented.
+- Active phase also spawns every player with the Pulse, full health, and FFA spawn protection.
+  Accepted shots consume ammunition, apply shield-first damage, start automatic reloads, and can
+  eliminate and schedule a respawn.
+- Finished phase records `finishedAt`, `endReason: "timer_expired"`, and the winner IDs derived from
+  server-owned scores. Ties produce multiple winner IDs or an empty list, which the UI presents as
+  a draw.
 - Timers are process-local `setTimeout` handles tied to the room and cleared when a room is
   destroyed.
 
@@ -142,19 +148,25 @@ minute per source address in this implementation.
 ### Server → client
 
 ```text
-WELCOME      { playerId, sessionToken, match, serverTime }   // once per successful resume
-MATCH_STATE  { match, serverTime }                           // full snapshot after changes
-ERROR        { code, message, requestId? }
-PONG         { clientTime, serverTime }
+WELCOME          { playerId, sessionToken, match, serverTime }  // once per successful resume
+MATCH_STATE      { match, serverTime }                          // full snapshot after changes
+SHOT_ACCEPTED    { targetId, damage, shieldDamage, healthDamage, ammo, reload, … }
+SHOT_REJECTED    { reason, message }
+DAMAGE_EVENT     { attackerId, victimId, damage, targetHealth, eliminated, respawnAt, … }
+ELIMINATION_EVENT{ playerId, byPlayerId, score }
+ERROR            { code, message, requestId? }
+PONG             { clientTime, serverTime }
 ```
 
-Full snapshots are intentionally used rather than deltas. Lobby state is small and changes
-infrequently; snapshots eliminate a large class of ordering bugs. If combat produces many updates
-per second, this decision should be revisited with measured bandwidth, not guessed.
+Full snapshots are intentionally used rather than deltas. Match state is small and changes
+infrequently; snapshots eliminate a large class of ordering bugs. Combat events are sent in
+addition to the snapshot so the HUD can show hit feedback without waiting for a render, but the
+snapshot remains the authoritative state. If combat throughput grows, this decision should be
+revisited with measured bandwidth, not guessed.
 
-`matchSnapshotSchema` includes the player fields needed by the intended combat phase (health,
-shield, role, weapon, ammo, spawn lock). Those fields are currently initialized by the server at
-match start but never mutated by combat, because combat does not exist yet.
+`matchSnapshotSchema` includes every player field the HUD needs (health, shield, role, weapon,
+ammo, spawn lock, respawn time, score, kills/deaths, and a match-scoped public marker ID). The
+server mutates those values; clients never do.
 
 ## Client connection behavior
 
@@ -172,8 +184,11 @@ match start but never mutated by combat, because combat does not exist yet.
 
 - Display names are normalized (whitespace, control/BiDi characters) and limited to 24 code points
   before render or storage. React escapes them as text.
-- Coordinates, camera evidence, and shot requests do not exist yet. When they are added, they must
-  be validated and rate-limited at the same boundary.
+- Shot requests are Zod-validated, rate-limited per socket, and bounded in payload size. The
+  server re-checks marker identity against the current room, reticle offset, confidence,
+  orientation presence, range, target eligibility, cooldown, reload, and ammunition.
+- GPS coordinates and arena boundaries do not exist yet. When they are added, they must be
+  validated and rate-limited at the same boundary.
 - Origin allow-listing is available through `CORS_ORIGIN`. The default `*` exists only so phones
   can reach a LAN dev server. It is not a public-deployment default.
 - HTTP and WebSocket responses never include another player's session token.
@@ -200,12 +215,11 @@ The initial server intentionally keeps matches in memory:
 - **Arena/GPS:** add longitude/latitude plus accuracy and timestamp to player state, a local
   coordinate projection in shared code, boundary hysteresis in `MatchManager`, and out-of-bound
   drain timers. Do not reuse screen pixels as world coordinates.
-- **Combat:** add shot requests with server-side cooldown, ammo, reload timestamps, target
-  eligibility, range checks, damage/shield calculation, elimination, and FFA scoring. Keep timers
-  monotonic and server-owned; update shared types, server rules, client feedback, and tests
-  together.
-- **Camera aiming:** add a local-only marker detector and orientation calibration on the client.
-  The server should accept only minimal evidence plus target identity and apply eligibility,
-  range, cooldown, and rate limits. Client vision evidence remains forgeable; document that.
+- **Camera calibration:** compare compass heading against a GPS-derived target bearing once
+  positions exist, and calibrate the camera optical frame against the device orientation frame.
+  Today the server verifies that orientation data is present but cannot check its agreement with
+  a target bearing.
 - **Modes:** add server-side role/team assignment and win-condition evaluators; do not expose
   hidden enemy positions in snapshots or minimap layers.
+- **Pickups:** add server-owned pickup entities, collection validation, respawn timers, and
+  snapshot fields.

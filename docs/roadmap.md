@@ -6,16 +6,23 @@ and tests, not just UI scaffolding.
 
 ## Status — 2026-10-24
 
-**Done: Phase 1 and the start of Phase 2.**
+**Done: Phases 1, 2, 4, and the first camera/HUD slice of Phase 5.**
 
 - Monorepo, shared types/protocol, Next.js app, Node game server.
 - HTTP create/join with unguessable sessions; QR/code join; synchronized lobby.
 - Ready states, host-only mode/duration settings, config versions, countdown, server start/end.
 - Reconnect grace, explicit leave, host transfer, validation, rate limits.
-- Two-client integration tests and a manual browser run.
+- Authoritative Free For All: Pulse, ammunition, automatic reload, damage, shields, spawn
+  protection, elimination, respawn, scoring, timer winner/draw, and a results screen.
+- Fullscreen camera HUD with translucent overlay, local QR marker detection, target lock, hit
+  feedback, scoreboard, and a clearly labeled practice-targeting fallback.
+- Multi-client unit and WebSocket integration tests plus repeated manual browser runs.
 
-**Not done:** real results/winners, arena, GPS, minimap, combat, weapons, pickups, camera aiming,
-Assassin, Team Deathmatch, scoring, physical-device testing.
+**Not done:** GPS arena, minimap, pickups, Ravager/Viper in normal play, Assassin, Team
+Deathmatch, full compass/bearing fusion, physical-device camera validation.
+
+> The phase plans below are kept as the working plan. Sections that describe combat or camera
+> aiming as future work are superseded by the current implementation and tests.
 
 ## P0 — Close the lobby/lifecycle slice
 
@@ -23,8 +30,8 @@ Goal: make the current slice boringly reliable and demo-ready with two or three 
 
 1. Test the current flow on real iOS Safari and Android Chrome over LAN HTTPS or a tunnel.
    Identify dev-origin, WebSocket, and session-storage issues early.
-2. Add a true results screen only when there is a real scoring rule behind it. Until combat exists,
-   do not fabricate a winner; the current "no score recorded" screen is honest.
+2. Results now come from server-owned FFA scores. Keep the rule honest: a tie or a match with no
+   confirmed elimination is a draw.
 3. Add host "return to lobby" / rematch after a finished match (optional, small).
 4. Add a browser-level smoke test for create → join → ready → start if Playwright is available.
 5. Tighten deployment documentation and a repeatable demo script.
@@ -146,12 +153,15 @@ screen.
 - [x] Players join via code/QR.
 - [x] Lobby state is synchronized.
 - [x] Server-controlled countdown and match start.
-- [ ] Server-controlled results/winners with real scoring.
+- [x] Server-controlled results/winners with real Free For All scoring.
 - [ ] Three distinct game modes.
-- [ ] Server-authoritative damage/ammo/cooldowns/elimination.
-- [ ] Automatic reload.
-- [ ] Camera marker identification + orientation agreement + ambiguity rejection.
+- [x] Server-authoritative damage/ammo/cooldowns/elimination.
+- [x] Automatic reload.
+- [ ] Camera marker identification + orientation agreement + ambiguity rejection (marker
+  identification and reticle confidence are implemented and tested; full bearing fusion needs GPS
+  and a physical-device test).
 - [ ] GPS boundaries with accuracy checks and hysteresis.
-- [ ] Usable physical-phone HUD for aiming.
-- [ ] Combat/multiplayer tests and physical-device camera tests.
+- [ ] Usable physical-phone HUD for aiming (implemented as a fullscreen camera HUD; physical-device
+  readability and ergonomics are still unverified).
+- [x] Combat/multiplayer tests. Physical-device camera tests remain.
 - [ ] Documented, repeatable live demo.
