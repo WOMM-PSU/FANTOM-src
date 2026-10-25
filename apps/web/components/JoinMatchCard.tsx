@@ -67,7 +67,7 @@ export function JoinMatchCard({ joinCode, onJoined, notice }: Props) {
         <div>
           <p className="eyebrow">Match {code || "—"}</p>
           <h1 className="panel-title" id="join-title">
-            Join the match
+            Enter the arena
           </h1>
         </div>
       </div>
@@ -109,8 +109,8 @@ export function JoinMatchCard({ joinCode, onJoined, notice }: Props) {
       </form>
 
       <p className="fine-print">
-        Join only from a safe, open area. This build does not require you to
-        move or point the camera at anyone.
+        Join only from a safe, open area. Camera and motion access are requested
+        when the match begins, and camera frames never leave your device.
       </p>
 
       <Link className="text-link" href="/">

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./hud.css";
 
 export const metadata: Metadata = {
   title: {
@@ -7,7 +8,7 @@ export const metadata: Metadata = {
     template: "%s · FANTOM",
   },
   description:
-    "Turn phones into real-world laser tag equipment. Create a match, invite friends, and get everyone into the same live lobby.",
+    "A real-world multiplayer laser-tag game on ordinary phones. Camera aim, live HUD, server-validated hits.",
   applicationName: "FANTOM",
 };
 
@@ -15,7 +16,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#05080f",
+  themeColor: "#04070d",
 };
 
 export default function RootLayout({

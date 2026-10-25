@@ -3,8 +3,8 @@
 import { normalizeJoinCode } from "@fantom/shared";
 import { useRouter } from "next/navigation";
 import { useMatchConnection } from "@/hooks/useMatchConnection";
-import { ActiveMatchPanel } from "./ActiveMatchPanel";
 import { Brand } from "./Brand";
+import { CombatHud } from "./CombatHud";
 import { ConnectionNotice } from "./ConnectionNotice";
 import { CountdownPanel } from "./CountdownPanel";
 import { FinishedPanel } from "./FinishedPanel";
@@ -87,7 +87,7 @@ export function MatchScreen({ joinCode }: Props) {
           <h1 className="panel-title">
             {connection.status === "reconnecting"
               ? "Reconnecting…"
-              : "Connecting to the match…"}
+              : "Linking to the arena…"}
           </h1>
           <p className="lede center-copy">
             Waiting for the authoritative game state from the server.
@@ -104,14 +104,45 @@ export function MatchScreen({ joinCode }: Props) {
 
   const match = connection.match;
 
+  if (match.phase === "active") {
+    return (
+      <CombatHud
+        match={match}
+        currentPlayerId={connection.session.playerId}
+        clockOffset={connection.clockOffset}
+        shotFeedback={connection.shotFeedback}
+        lastDamage={connection.lastDamage}
+        lastElimination={connection.lastElimination}
+        status={connection.status}
+        error={connection.error}
+        onRetry={connection.retry}
+        onDismissError={connection.clearError}
+        onFire={connection.fireShot}
+        onLeave={leaveMatch}
+      />
+    );
+  }
+
+  if (match.phase === "countdown") {
+    return (
+      <CountdownPanel
+        match={match}
+        clockOffset={connection.clockOffset}
+        status={connection.status}
+        error={connection.error}
+        onRetry={connection.retry}
+        onDismissError={connection.clearError}
+        onLeave={leaveMatch}
+      />
+    );
+  }
+
   return (
     <MatchShell>
       <header className="match-topbar">
         <Brand compact />
         <div className="topbar-actions">
-          <span className="code-chip">
-            {normalizeJoinCode(match.joinCode)}
-          </span>
+          <span className="code-chip">{normalizeJoinCode(match.joinCode)}</span>
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -138,21 +169,6 @@ export function MatchScreen({ joinCode }: Props) {
           onUpdateConfig={connection.updateConfig}
           onStart={connection.startMatch}
           onLeave={leaveMatch}
-        />
-      ) : null}
-
-      {match.phase === "countdown" ? (
-        <CountdownPanel
-          match={match}
-          clockOffset={connection.clockOffset}
-        />
-      ) : null}
-
-      {match.phase === "active" ? (
-        <ActiveMatchPanel
-          match={match}
-          currentPlayerId={connection.session.playerId}
-          clockOffset={connection.clockOffset}
         />
       ) : null}
 

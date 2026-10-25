@@ -55,13 +55,13 @@ export function LobbyPanel({
     <div className="phase-stack">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Lobby · {GAME_MODE_LABELS[match.config.mode]}</p>
+          <p className="eyebrow">Squad lobby · {GAME_MODE_LABELS[match.config.mode]}</p>
           <h1 className="panel-title">
-            {isHost ? "Get everyone ready" : "Waiting in the lobby"}
+            {isHost ? "Build your squad" : "Standing by"}
           </h1>
         </div>
         <span className="count-chip">
-          {match.players.length}/{MAX_PLAYERS}
+          {match.players.length}/{MAX_PLAYERS} linked
         </span>
       </div>
 
@@ -70,7 +70,7 @@ export function LobbyPanel({
       <section className="card" aria-labelledby="players-title">
         <div className="section-heading">
           <h2 className="section-title" id="players-title">
-            Players
+            Squad roster
           </h2>
           <span className="section-kicker">Ready check</span>
         </div>
@@ -97,7 +97,7 @@ export function LobbyPanel({
           disabled={!connected || !me}
           aria-pressed={me?.ready ?? false}
         >
-          {me?.ready ? "Cancel ready" : "I'm ready"}
+          {me?.ready ? "Stand down" : "Ready up"}
         </button>
 
         {isHost ? (
@@ -108,7 +108,7 @@ export function LobbyPanel({
               onClick={onStart}
               disabled={!connected || !startCheck.ok}
             >
-              Start match
+              Deploy squad
             </button>
             <p className="action-hint" aria-live="polite">
               {startHint}

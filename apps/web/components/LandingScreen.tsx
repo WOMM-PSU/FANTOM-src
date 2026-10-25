@@ -104,31 +104,49 @@ export function LandingScreen() {
 
   return (
     <main className="screen landing-screen">
+      <div className="landing-grid" aria-hidden="true" />
+      <div className="landing-glow" aria-hidden="true" />
+
       <div className="shell">
         <header className="landing-top">
           <Brand />
-          <span className="build-chip">Lobby build 0.1</span>
+          <span className="build-chip">FIELD BUILD 0.2</span>
         </header>
 
         <section className="hero">
-          <p className="eyebrow">Works On My Machine · PSU</p>
+          <p className="eyebrow">WOMM-PSU · REAL-WORLD COMBAT SYSTEM</p>
           <h1 className="hero-title">
-            Real-world laser tag.
-            <br />
-            Just phones.
+            <span className="hero-line">LASER TAG</span>
+            <span className="hero-line hero-line-accent">IN THE REAL WORLD</span>
           </h1>
-          <p className="lede">
-            Create a match, share the code, and get everyone into the same
-            live lobby. Camera-assisted aiming and the GPS arena are next.
+          <p className="lede hero-lede">
+            Your phone is the blaster. Your camera is the scope. Lock a visible
+            target marker, fire, and let the game server confirm every hit.
           </p>
+
+          <div className="hero-stats">
+            <span>
+              <b>PHONE</b> ONLY KIT
+            </span>
+            <span>
+              <b>SERVER</b> AUTHORITY
+            </span>
+            <span>
+              <b>CAMERA</b> AIM LOCK
+            </span>
+          </div>
         </section>
 
-        <section className="card" aria-labelledby="start-title">
-          <h2 className="section-title" id="start-title">
-            Pick a call sign
-          </h2>
+        <section className="panel deploy-panel" aria-labelledby="start-title">
+          <div className="panel-head">
+            <span className="panel-index">01 / DEPLOY</span>
+            <h2 className="panel-title" id="start-title">
+              CHOOSE YOUR CALL SIGN
+            </h2>
+          </div>
+
           <label className="field">
-            <span className="field-label">Your call sign</span>
+            <span className="field-label">Call sign</span>
             <input
               className="input"
               value={name}
@@ -146,11 +164,11 @@ export function LandingScreen() {
             onClick={() => void createNewMatch()}
             disabled={busy !== null}
           >
-            {busy === "create" ? "Creating match…" : "Create match"}
+            {busy === "create" ? "Opening arena…" : "Create match"}
           </button>
 
           <div className="divider">
-            <span>or join with a code</span>
+            <span>Or link to an existing match</span>
           </div>
 
           <div className="join-row">
@@ -175,7 +193,7 @@ export function LandingScreen() {
               onClick={() => void joinExistingMatch()}
               disabled={busy !== null}
             >
-              {busy === "join" ? "Joining…" : "Join"}
+              {busy === "join" ? "Linking…" : "Join"}
             </button>
           </div>
 
@@ -186,15 +204,39 @@ export function LandingScreen() {
           ) : null}
 
           <p className="fine-print">
-            No account needed. Sessions stay in this browser tab and end with
-            the match.
+            No account, no install. Your session lives in this browser tab and
+            ends with the match.
           </p>
+        </section>
+
+        <section className="brief-strip" aria-label="How a match runs">
+          <div className="brief-step">
+            <span className="brief-num">01</span>
+            <div>
+              <strong>FORM A SQUAD</strong>
+              <p>Share the four-character code or open the QR invite.</p>
+            </div>
+          </div>
+          <div className="brief-step">
+            <span className="brief-num">02</span>
+            <div>
+              <strong>LOAD THE ARENA</strong>
+              <p>The lobby arms everyone and syncs the match rules.</p>
+            </div>
+          </div>
+          <div className="brief-step">
+            <span className="brief-num">03</span>
+            <div>
+              <strong>HUNT THE SIGNAL</strong>
+              <p>Camera view, HUD overlay, server-validated hits.</p>
+            </div>
+          </div>
         </section>
 
         <p className="safety-note">
           <span aria-hidden="true">◎</span>
-          Play in an open, designated area away from roads, traffic, stairs,
-          and other hazards. Never run while looking at your phone.
+          Play in an open, designated area away from roads, traffic, stairs, and
+          other hazards. Never run while looking at your phone.
         </p>
 
         <footer className="page-footer">

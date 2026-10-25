@@ -17,72 +17,93 @@ type Props = {
 
 export function LobbySettings({ config, disabled, onChange }: Props) {
   return (
-    <section className="card settings-card" aria-labelledby="settings-title">
-      <div className="section-heading">
-        <h2 className="section-title" id="settings-title">
-          Match settings
-        </h2>
-        <span className="section-kicker">Host only</span>
-      </div>
+    <details className="card settings-card">
+      <summary className="settings-summary">
+        <span className="section-title">Match config</span>
+        <span className="settings-toggle" aria-hidden="true">
+          HOST ACCESS <b>+</b>
+        </span>
+      </summary>
 
-      <div className="settings-grid">
-        <label className="field">
-          <span className="field-label">Game mode</span>
-          <select
-            className="input select"
-            value={config.mode}
+      <div className="settings-body">
+        <div className="settings-grid">
+          <label className="field">
+            <span className="field-label">Game mode</span>
+            <select
+              className="input select"
+              value={config.mode}
+              disabled={disabled}
+              onChange={(event) => {
+                const mode = event.target.value as MatchConfig["mode"];
+                if (mode !== config.mode) {
+                  onChange({ ...config, mode });
+                }
+              }}
+            >
+              {GAME_MODES.map((mode) => (
+                <option
+                  key={mode}
+                  value={mode}
+                  disabled={!isModePlayable(mode)}
+                >
+                  {GAME_MODE_LABELS[mode]}
+                  {isModePlayable(mode) ? "" : " — next phase"}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span className="field-label">Match length</span>
+            <select
+              className="input select"
+              value={config.durationSeconds}
+              disabled={disabled}
+              onChange={(event) => {
+                const durationSeconds = Number(event.target.value);
+                if (
+                  Number.isFinite(durationSeconds) &&
+                  durationSeconds !== config.durationSeconds
+                ) {
+                  onChange({ ...config, durationSeconds });
+                }
+              }}
+            >
+              {DURATION_OPTIONS_SECONDS.map((seconds) => (
+                <option key={seconds} value={seconds}>
+                  {seconds / 60} minutes
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <label className="checkbox-field">
+          <input
+            type="checkbox"
+            checked={config.allowManualTargeting}
             disabled={disabled}
-            onChange={(event) => {
-              const mode = event.target.value as MatchConfig["mode"];
-              if (mode !== config.mode) {
-                onChange({ ...config, mode });
-              }
-            }}
-          >
-            {GAME_MODES.map((mode) => (
-              <option
-                key={mode}
-                value={mode}
-                disabled={!isModePlayable(mode)}
-              >
-                {GAME_MODE_LABELS[mode]}
-                {isModePlayable(mode) ? "" : " — next phase"}
-              </option>
-            ))}
-          </select>
+            onChange={(event) =>
+              onChange({
+                ...config,
+                allowManualTargeting: event.target.checked,
+              })
+            }
+          />
+          <span>
+            <strong>Allow practice targeting.</strong> Lets players fire from a
+            target list when camera aiming is unavailable. This is a development
+            fallback and is never presented as camera-assisted aiming.
+          </span>
         </label>
 
-        <label className="field">
-          <span className="field-label">Match length</span>
-          <select
-            className="input select"
-            value={config.durationSeconds}
-            disabled={disabled}
-            onChange={(event) => {
-              const durationSeconds = Number(event.target.value);
-              if (
-                Number.isFinite(durationSeconds) &&
-                durationSeconds !== config.durationSeconds
-              ) {
-                onChange({ ...config, durationSeconds });
-              }
-            }}
-          >
-            {DURATION_OPTIONS_SECONDS.map((seconds) => (
-              <option key={seconds} value={seconds}>
-                {seconds / 60} minutes
-              </option>
-            ))}
-          </select>
-        </label>
+        <p className="setting-description">
+          {GAME_MODE_DESCRIPTIONS[config.mode]}
+        </p>
+        <p className="setting-warning">
+          Changing a setting resets everyone&apos;s ready state.
+        </p>
       </div>
-
-      <p className="setting-description">
-        {GAME_MODE_DESCRIPTIONS[config.mode]}
-      </p>
-      <p className="setting-warning">
-        Changing a setting resets everyone&apos;s ready state.
-      </p>
-    </section>
+    </details>
   );
 }

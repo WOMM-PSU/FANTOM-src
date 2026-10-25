@@ -5,9 +5,13 @@ import {
   normalizeJoinCode,
   serverMessageSchema,
   type ClientMessage,
+  type DamageEvent,
+  type EliminationEvent,
   type MatchConfig,
   type MatchSnapshot,
   type ServerErrorCode,
+  type ShotEvidence,
+  type ShotRejectReason,
 } from "@fantom/shared";
 import { createRequestId } from "@/lib/ids";
 import { getWebSocketUrl } from "@/lib/serverUrl";
@@ -32,6 +36,28 @@ export type UiError = {
   message: string;
 };
 
+export type ShotFeedback =
+  | {
+      accepted: true;
+      at: number;
+      targetId: string;
+      damage: number;
+      shieldDamage: number;
+      healthDamage: number;
+      eliminated: boolean;
+    }
+  | {
+      accepted: false;
+      at: number;
+      reason: ShotRejectReason;
+      message: string;
+    };
+
+export type ReceivedDamageEvent = DamageEvent & { receivedAt: number };
+export type ReceivedEliminationEvent = EliminationEvent & {
+  receivedAt: number;
+};
+
 export type MatchConnection = {
   sessionLoaded: boolean;
   session: StoredSession | null;
@@ -40,10 +66,14 @@ export type MatchConnection = {
   error: UiError | null;
   sessionExpired: boolean;
   clockOffset: number;
+  shotFeedback: ShotFeedback | null;
+  lastDamage: ReceivedDamageEvent | null;
+  lastElimination: ReceivedEliminationEvent | null;
   joinWithSession: (session: StoredSession) => boolean;
   setReady: (ready: boolean) => void;
   updateConfig: (config: MatchConfig) => void;
   startMatch: () => void;
+  fireShot: (targetPlayerId: string, evidence: ShotEvidence) => void;
   leave: () => void;
   retry: () => void;
   clearError: () => void;
@@ -63,6 +93,12 @@ export function useMatchConnection(joinCode: string): MatchConnection {
   const [sessionExpired, setSessionExpired] = useState(false);
   const [clockOffset, setClockOffset] = useState(0);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [shotFeedback, setShotFeedback] = useState<ShotFeedback | null>(null);
+  const [lastDamage, setLastDamage] = useState<ReceivedDamageEvent | null>(
+    null,
+  );
+  const [lastElimination, setLastElimination] =
+    useState<ReceivedEliminationEvent | null>(null);
 
   const sessionRef = useRef<StoredSession | null>(null);
   const matchRef = useRef<MatchSnapshot | null>(null);
@@ -174,6 +210,35 @@ export function useMatchConnection(joinCode: string): MatchConnection {
           }
           case "PONG": {
             setClockOffset(message.serverTime - Date.now());
+            break;
+          }
+          case "SHOT_ACCEPTED": {
+            setShotFeedback({
+              accepted: true,
+              at: Date.now(),
+              targetId: message.targetId,
+              damage: message.damage,
+              shieldDamage: message.shieldDamage,
+              healthDamage: message.healthDamage,
+              eliminated: message.eliminated,
+            });
+            break;
+          }
+          case "SHOT_REJECTED": {
+            setShotFeedback({
+              accepted: false,
+              at: Date.now(),
+              reason: message.reason,
+              message: message.message,
+            });
+            break;
+          }
+          case "DAMAGE_EVENT": {
+            setLastDamage({ ...message, receivedAt: Date.now() });
+            break;
+          }
+          case "ELIMINATION_EVENT": {
+            setLastElimination({ ...message, receivedAt: Date.now() });
             break;
           }
           case "ERROR": {
@@ -324,6 +389,18 @@ export function useMatchConnection(joinCode: string): MatchConnection {
     });
   }, [send]);
 
+  const fireShot = useCallback(
+    (targetPlayerId: string, evidence: ShotEvidence) => {
+      send({
+        type: "REQUEST_SHOT",
+        requestId: createRequestId(),
+        targetPlayerId,
+        evidence,
+      });
+    },
+    [send],
+  );
+
   const leave = useCallback(() => {
     const socket = socketRef.current;
     if (socket?.readyState === WebSocket.OPEN && matchRef.current) {
@@ -341,6 +418,9 @@ export function useMatchConnection(joinCode: string): MatchConnection {
     setSession(null);
     setSessionExpired(false);
     setError(null);
+    setShotFeedback(null);
+    setLastDamage(null);
+    setLastElimination(null);
     updateMatch(null);
     setStatus("idle");
   }, [code, updateMatch]);
@@ -366,10 +446,14 @@ export function useMatchConnection(joinCode: string): MatchConnection {
     error,
     sessionExpired,
     clockOffset,
+    shotFeedback,
+    lastDamage,
+    lastElimination,
     joinWithSession,
     setReady,
     updateConfig,
     startMatch,
+    fireShot,
     leave,
     retry,
     clearError,

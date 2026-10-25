@@ -13,7 +13,7 @@ type Props = {
 export function PlayerList({ players, currentPlayerId, phase }: Props) {
   return (
     <ul className="player-list" aria-label="Players in this match">
-      {players.map((player) => {
+      {players.map((player, index) => {
         const isYou = player.id === currentPlayerId;
         const isLobby = phase === "lobby" || phase === "countdown";
 
@@ -22,6 +22,9 @@ export function PlayerList({ players, currentPlayerId, phase }: Props) {
             className={`player-row${player.connected ? "" : " player-row-offline"}`}
             key={player.id}
           >
+            <span className="player-index" aria-hidden="true">
+              {String(index + 1).padStart(2, "0")}
+            </span>
             <span
               className="player-dot"
               style={{ backgroundColor: player.color }}
@@ -41,7 +44,7 @@ export function PlayerList({ players, currentPlayerId, phase }: Props) {
                 <span
                   className={`badge${player.ready ? " badge-ready" : ""}`}
                 >
-                  {player.ready ? "Ready" : "Waiting"}
+                  {player.ready ? "Ready" : "Standby"}
                 </span>
               ) : (
                 <>
