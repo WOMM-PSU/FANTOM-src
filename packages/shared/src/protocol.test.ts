@@ -11,7 +11,11 @@ const snapshot: MatchSnapshot = {
   joinCode: "ABCD",
   phase: "lobby",
   hostPlayerId: "player-1",
-  config: { mode: "ffa", durationSeconds: 300 },
+  config: {
+    mode: "ffa",
+    durationSeconds: 300,
+    allowManualTargeting: false,
+  },
   configVersion: 0,
   players: [
     {
@@ -30,6 +34,13 @@ const snapshot: MatchSnapshot = {
       weaponId: null,
       ammo: 0,
       spawnLockedUntil: 0,
+      nextShotAt: 0,
+      reloadCompleteAt: null,
+      respawnAt: null,
+      score: 0,
+      kills: 0,
+      deaths: 0,
+      markerId: "marker-123",
     },
   ],
   createdAt: 1,
@@ -38,6 +49,7 @@ const snapshot: MatchSnapshot = {
   endsAt: null,
   finishedAt: null,
   endReason: null,
+  winnerIds: [],
 };
 
 describe("client messages", () => {

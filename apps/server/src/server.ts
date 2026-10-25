@@ -17,6 +17,9 @@ export type GameServerOptions = {
   cleanupIntervalMs?: number;
   corsOrigin?: string;
   maxPlayers?: number;
+  respawnMs?: number;
+  spawnProtectionMs?: number;
+  tickIntervalMs?: number;
 };
 
 export type RunningGameServer = {
@@ -40,6 +43,9 @@ export async function createGameServer(
     finishedMatchTtlMs: options.finishedMatchTtlMs,
     lobbyTtlMs: options.lobbyTtlMs,
     maxPlayers: options.maxPlayers,
+    respawnMs: options.respawnMs,
+    spawnProtectionMs: options.spawnProtectionMs,
+    tickIntervalMs: options.tickIntervalMs,
   });
 
   const handleHttp = createHttpHandler({ manager, corsOrigin });

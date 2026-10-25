@@ -146,7 +146,11 @@ describe("lobby and match lifecycle", () => {
     guest.send({
       type: "UPDATE_CONFIG",
       requestId: randomUUID(),
-      config: { mode: "ffa", durationSeconds: 120 },
+      config: {
+        mode: "ffa",
+        durationSeconds: 120,
+        allowManualTargeting: false,
+      },
     });
     expect((await guest.waitFor("ERROR")).code).toBe("NOT_HOST");
 
@@ -169,7 +173,11 @@ describe("lobby and match lifecycle", () => {
     host.send({
       type: "UPDATE_CONFIG",
       requestId: randomUUID(),
-      config: { mode: "ffa", durationSeconds: 120 },
+      config: {
+        mode: "ffa",
+        durationSeconds: 120,
+        allowManualTargeting: false,
+      },
     });
     const reconfigured = await host.waitFor(
       "MATCH_STATE",

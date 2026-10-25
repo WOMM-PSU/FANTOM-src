@@ -72,6 +72,7 @@ function configureShortMatch(fixture: Fixture): void {
   fixture.manager.updateConfig(fixture.room, fixture.host, {
     mode: "ffa",
     durationSeconds: 60,
+    allowManualTargeting: false,
   });
   fixture.manager.setReady(
     fixture.room,
@@ -130,7 +131,8 @@ describe("MatchManager lifecycle", () => {
       expect(player.status).toBe("alive");
       expect(player.health).toBe(100);
       expect(player.maxHealth).toBe(100);
-      expect(player.weaponId).toBeNull();
+      expect(player.weaponId).toBe("pulse");
+      expect(player.ammo).toBe(12);
       expect(player.spawnLockedUntil).toBe(Date.now() + 5_000);
     }
 
@@ -203,6 +205,7 @@ describe("MatchManager lifecycle", () => {
         fixture.manager.updateConfig(fixture.room, fixture.guest, {
           mode: "ffa",
           durationSeconds: 120,
+          allowManualTargeting: false,
         }),
       "NOT_HOST",
     );
@@ -217,6 +220,7 @@ describe("MatchManager lifecycle", () => {
     fixture.manager.updateConfig(fixture.room, fixture.host, {
       mode: "ffa",
       durationSeconds: 120,
+      allowManualTargeting: false,
     });
 
     expect(fixture.room.configVersion).toBe(1);
@@ -264,6 +268,7 @@ describe("MatchManager lifecycle", () => {
         fixture.manager.updateConfig(fixture.room, fixture.host, {
           mode: "assassin",
           durationSeconds: 300,
+          allowManualTargeting: false,
         }),
       "MODE_UNAVAILABLE",
     );

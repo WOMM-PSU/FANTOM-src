@@ -5,6 +5,7 @@ import type { MatchConfig } from "./types";
 export const DEFAULT_MATCH_CONFIG: MatchConfig = {
   mode: "ffa",
   durationSeconds: DEFAULT_MATCH_DURATION_SECONDS,
+  allowManualTargeting: false,
 };
 
 export function parseMatchConfig(input: unknown): MatchConfig | null {

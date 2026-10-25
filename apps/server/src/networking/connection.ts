@@ -234,6 +234,15 @@ export function attachConnection(
         case "START_MATCH":
           manager.startMatch(room, player, message.configVersion);
           break;
+        case "REQUEST_SHOT":
+          manager.requestShot(
+            room,
+            player,
+            message.targetPlayerId,
+            message.evidence,
+            message.requestId,
+          );
+          break;
         case "LEAVE_MATCH":
           manager.leave(room, player);
           room = null;

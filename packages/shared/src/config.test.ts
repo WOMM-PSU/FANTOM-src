@@ -22,30 +22,45 @@ describe("match configuration", () => {
       parseMatchConfig({
         mode: "ffa",
         durationSeconds: MIN_MATCH_DURATION_SECONDS - 1,
+        allowManualTargeting: false,
       }),
     ).toBeNull();
     expect(
       parseMatchConfig({
         mode: "ffa",
         durationSeconds: MAX_MATCH_DURATION_SECONDS + 1,
+        allowManualTargeting: false,
       }),
     ).toBeNull();
     expect(
-      parseMatchConfig({ mode: "ffa", durationSeconds: 120.5 }),
+      parseMatchConfig({
+        mode: "ffa",
+        durationSeconds: 120.5,
+        allowManualTargeting: false,
+      }),
     ).toBeNull();
   });
 
   it("rejects unknown modes and strips unknown fields", () => {
     expect(
-      parseMatchConfig({ mode: "battle-royale", durationSeconds: 300 }),
+      parseMatchConfig({
+        mode: "battle-royale",
+        durationSeconds: 300,
+        allowManualTargeting: false,
+      }),
     ).toBeNull();
     expect(
       parseMatchConfig({
         mode: "ffa",
         durationSeconds: 300,
+        allowManualTargeting: true,
         injected: true,
       }),
-    ).toEqual({ mode: "ffa", durationSeconds: 300 });
+    ).toEqual({
+      mode: "ffa",
+      durationSeconds: 300,
+      allowManualTargeting: true,
+    });
   });
 });
 

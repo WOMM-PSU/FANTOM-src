@@ -1,13 +1,18 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
+  CAMERA_CENTER_TOLERANCE,
+  CAMERA_MIN_CONFIDENCE,
   DEFAULT_COUNTDOWN_MS,
   DEFAULT_MATCH_CONFIG,
   DEFAULT_MAX_HEALTH,
   DEFAULT_RECONNECT_GRACE_MS,
+  FFA_RESPAWN_MS,
   FFA_SPAWN_PROTECTION_MS,
+  FFA_STARTING_WEAPON,
   MAX_PLAYERS,
   PLAYER_COLORS,
   START_BLOCK_MESSAGES,
+  WEAPONS,
   evaluateStart,
   generateJoinCode,
   isModePlayable,
@@ -21,6 +26,9 @@ import {
   type PlayerRole,
   type PlayerStatus,
   type ServerMessage,
+  type ShotEvidence,
+  type ShotRejectReason,
+  type WeaponDefinition,
 } from "@fantom/shared";
 import { gameError } from "../errors";
 
@@ -48,6 +56,13 @@ export type PlayerRecord = {
   weaponId: string | null;
   ammo: number;
   spawnLockedUntil: number;
+  nextShotAt: number;
+  reloadCompleteAt: number | null;
+  respawnAt: number | null;
+  score: number;
+  kills: number;
+  deaths: number;
+  markerId: string;
 };
 
 export type MatchRoom = {
@@ -64,8 +79,10 @@ export type MatchRoom = {
   endsAt: number | null;
   finishedAt: number | null;
   endReason: MatchSnapshot["endReason"];
+  winnerIds: string[];
   countdownTimer: ReturnType<typeof setTimeout> | null;
   endTimer: ReturnType<typeof setTimeout> | null;
+  tickTimer: ReturnType<typeof setInterval> | null;
 };
 
 export type MatchSession = {
@@ -80,6 +97,9 @@ export type MatchManagerOptions = {
   finishedMatchTtlMs?: number;
   lobbyTtlMs?: number;
   maxPlayers?: number;
+  respawnMs?: number;
+  spawnProtectionMs?: number;
+  tickIntervalMs?: number;
   now?: () => number;
 };
 
@@ -118,6 +138,9 @@ export class MatchManager {
   private readonly finishedMatchTtlMs: number;
   private readonly lobbyTtlMs: number;
   private readonly maxPlayers: number;
+  private readonly respawnMs: number;
+  private readonly spawnProtectionMs: number;
+  private readonly tickIntervalMs: number;
   private readonly now: () => number;
 
   constructor(options: MatchManagerOptions = {}) {
@@ -128,6 +151,10 @@ export class MatchManager {
       options.finishedMatchTtlMs ?? 10 * 60 * 1_000;
     this.lobbyTtlMs = options.lobbyTtlMs ?? 4 * 60 * 60 * 1_000;
     this.maxPlayers = options.maxPlayers ?? MAX_PLAYERS;
+    this.respawnMs = options.respawnMs ?? FFA_RESPAWN_MS;
+    this.spawnProtectionMs =
+      options.spawnProtectionMs ?? FFA_SPAWN_PROTECTION_MS;
+    this.tickIntervalMs = options.tickIntervalMs ?? 200;
     this.now = options.now ?? Date.now;
   }
 
@@ -163,8 +190,10 @@ export class MatchManager {
       endsAt: null,
       finishedAt: null,
       endReason: null,
+      winnerIds: [],
       countdownTimer: null,
       endTimer: null,
+      tickTimer: null,
     };
 
     const player = this.createPlayer(displayNameInput, true, now);
@@ -415,6 +444,7 @@ export class MatchManager {
     room.endsAt = null;
     room.finishedAt = null;
     room.endReason = null;
+    room.winnerIds = [];
 
     for (const player of room.players.values()) {
       player.ready = false;
@@ -426,6 +456,277 @@ export class MatchManager {
       room.countdownTimer = null;
       this.beginActivePhase(room);
     }, this.countdownMs);
+  }
+
+  requestShot(
+    room: MatchRoom,
+    shooter: PlayerRecord,
+    targetPlayerId: string,
+    evidence: ShotEvidence,
+    requestId: string,
+  ): void {
+    this.assertMember(room, shooter);
+    const now = this.now();
+
+    if (room.phase !== "active") {
+      this.rejectShot(shooter, requestId, "WRONG_PHASE", "The match is not live.");
+      return;
+    }
+    if (shooter.status !== "alive" || shooter.health <= 0) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "NOT_ALIVE",
+        "You are eliminated and cannot fire.",
+      );
+      return;
+    }
+    if (now < shooter.spawnLockedUntil) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "SPAWN_PROTECTED",
+        "Spawn protection is still active.",
+      );
+      return;
+    }
+
+    const weapon = this.weaponFor(shooter);
+    if (!weapon) {
+      this.rejectShot(shooter, requestId, "NO_WEAPON", "You have no weapon.");
+      return;
+    }
+    if (shooter.reloadCompleteAt !== null) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "RELOADING",
+        "The weapon is reloading.",
+      );
+      return;
+    }
+    if (shooter.ammo <= 0) {
+      shooter.reloadCompleteAt = now + weapon.reloadDurationMs;
+      this.rejectShot(
+        shooter,
+        requestId,
+        "RELOADING",
+        "The weapon is empty and is reloading automatically.",
+      );
+      return;
+    }
+    if (now < shooter.nextShotAt) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "COOLDOWN",
+        "The weapon is still cooling down.",
+      );
+      return;
+    }
+
+    if (targetPlayerId === shooter.id) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "SELF_TARGET",
+        "You cannot shoot yourself.",
+      );
+      return;
+    }
+
+    const target = room.players.get(targetPlayerId);
+    if (
+      !target ||
+      target.status !== "alive" ||
+      target.health <= 0 ||
+      !target.connected
+    ) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "TARGET_UNAVAILABLE",
+        "That player is not an eligible target.",
+      );
+      return;
+    }
+    if (now < target.spawnLockedUntil) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "TARGET_PROTECTED",
+        "That player still has spawn protection.",
+      );
+      return;
+    }
+
+    if (evidence.source === "manual" && !room.config.allowManualTargeting) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "MANUAL_TARGETING_DISABLED",
+        "Practice targeting is disabled for this match.",
+      );
+      return;
+    }
+
+    if (evidence.source === "camera") {
+      if (
+        evidence.markerId !== target.markerId ||
+        Math.abs(evidence.offsetX) > CAMERA_CENTER_TOLERANCE ||
+        Math.abs(evidence.offsetY) > CAMERA_CENTER_TOLERANCE ||
+        evidence.confidence < CAMERA_MIN_CONFIDENCE
+      ) {
+        this.rejectShot(
+          shooter,
+          requestId,
+          "AIM_INVALID",
+          "Hold the target marker inside the reticle and try again.",
+        );
+        return;
+      }
+      if (!evidence.orientation) {
+        this.rejectShot(
+          shooter,
+          requestId,
+          "AIM_INVALID",
+          "Device orientation is required for camera aiming.",
+        );
+        return;
+      }
+    }
+
+    if (
+      evidence.distanceMeters <= 0 ||
+      evidence.distanceMeters > weapon.rangeMeters
+    ) {
+      this.rejectShot(
+        shooter,
+        requestId,
+        "OUT_OF_RANGE",
+        `${weapon.name} is out of range for that target.`,
+      );
+      return;
+    }
+
+    shooter.ammo = Math.max(0, shooter.ammo - 1);
+    shooter.nextShotAt = now + weapon.fireIntervalMs;
+    if (shooter.ammo === 0) {
+      shooter.reloadCompleteAt = now + weapon.reloadDurationMs;
+    }
+
+    const shieldDamage = Math.min(target.shield, weapon.damage);
+    target.shield = Math.max(0, target.shield - shieldDamage);
+    const healthDamage = weapon.damage - shieldDamage;
+    target.health = Math.max(0, target.health - healthDamage);
+
+    let eliminated = false;
+    let respawnAt: number | null = null;
+    if (target.health <= 0) {
+      eliminated = true;
+      respawnAt = this.eliminatePlayer(room, target, shooter, now);
+    }
+
+    shooter.connection?.send({
+      type: "SHOT_ACCEPTED",
+      requestId,
+      targetId: target.id,
+      damage: weapon.damage,
+      shieldDamage,
+      healthDamage,
+      targetHealth: target.health,
+      targetShield: target.shield,
+      eliminated,
+      ammo: shooter.ammo,
+      nextShotAt: shooter.nextShotAt,
+      reloadCompleteAt: shooter.reloadCompleteAt,
+      serverTime: now,
+    });
+
+    const damageEvent: ServerMessage = {
+      type: "DAMAGE_EVENT",
+      attackerId: shooter.id,
+      victimId: target.id,
+      damage: weapon.damage,
+      shieldDamage,
+      healthDamage,
+      targetHealth: target.health,
+      targetShield: target.shield,
+      eliminated,
+      respawnAt,
+      serverTime: now,
+    };
+    this.broadcastMessage(room, damageEvent);
+
+    if (eliminated) {
+      const eliminationEvent: ServerMessage = {
+        type: "ELIMINATION_EVENT",
+        playerId: target.id,
+        byPlayerId: shooter.id,
+        score: shooter.score,
+        serverTime: now,
+      };
+      this.broadcastMessage(room, eliminationEvent);
+    }
+
+    this.broadcast(room);
+  }
+
+  private rejectShot(
+    shooter: PlayerRecord,
+    requestId: string,
+    reason: ShotRejectReason,
+    message: string,
+  ): void {
+    shooter.connection?.send({
+      type: "SHOT_REJECTED",
+      requestId,
+      reason,
+      message,
+      serverTime: this.now(),
+    });
+  }
+
+  private weaponFor(player: PlayerRecord): WeaponDefinition | null {
+    if (!player.weaponId) {
+      return null;
+    }
+    return (
+      WEAPONS[player.weaponId as keyof typeof WEAPONS] ?? null
+    );
+  }
+
+  private eliminatePlayer(
+    room: MatchRoom,
+    victim: PlayerRecord,
+    killer: PlayerRecord,
+    now: number,
+  ): number {
+    if (victim.status === "eliminated") {
+      return victim.respawnAt ?? now + this.respawnMs;
+    }
+
+    victim.status = "eliminated";
+    victim.health = 0;
+    victim.shield = 0;
+    victim.ammo = 0;
+    victim.nextShotAt = 0;
+    victim.reloadCompleteAt = null;
+    victim.respawnAt = now + this.respawnMs;
+    victim.deaths += 1;
+
+    if (killer.id !== victim.id) {
+      killer.score += 1;
+      killer.kills += 1;
+    }
+
+    return victim.respawnAt;
+  }
+
+  private broadcastMessage(room: MatchRoom, message: ServerMessage): void {
+    for (const player of room.players.values()) {
+      player.connection?.send(message);
+    }
   }
 
   getSnapshot(room: MatchRoom): MatchSnapshot {
@@ -449,6 +750,7 @@ export class MatchManager {
       endsAt: room.endsAt,
       finishedAt: room.finishedAt,
       endReason: room.endReason,
+      winnerIds: [...room.winnerIds],
     };
   }
 
@@ -501,8 +803,8 @@ export class MatchManager {
     room.startedAt = now;
     room.endsAt = now + room.config.durationSeconds * 1_000;
 
-    // Free For All is the only playable mode in this milestone. This is where
-    // mode-specific role and weapon initialization will be added.
+    // Free For All is the only playable mode in this milestone. Weapon caches
+    // and mode-specific role assignment will extend this initialization.
     for (const player of room.players.values()) {
       player.ready = false;
       player.role = null;
@@ -510,17 +812,83 @@ export class MatchManager {
       player.maxHealth = DEFAULT_MAX_HEALTH;
       player.health = DEFAULT_MAX_HEALTH;
       player.shield = 0;
-      player.weaponId = null;
-      player.ammo = 0;
-      player.spawnLockedUntil = now + FFA_SPAWN_PROTECTION_MS;
+      this.equipStartingWeapon(player);
+      player.spawnLockedUntil = now + this.spawnProtectionMs;
+      player.nextShotAt = 0;
+      player.reloadCompleteAt = null;
+      player.respawnAt = null;
+      player.score = 0;
+      player.kills = 0;
+      player.deaths = 0;
     }
 
     this.broadcast(room);
+
+    room.tickTimer = setInterval(() => this.tick(room), this.tickIntervalMs);
+    room.tickTimer.unref?.();
 
     room.endTimer = setTimeout(() => {
       room.endTimer = null;
       this.finishMatch(room);
     }, room.endsAt - now);
+  }
+
+  private tick(room: MatchRoom): void {
+    if (room.phase !== "active") {
+      return;
+    }
+
+    const now = this.now();
+    if (room.endsAt !== null && now >= room.endsAt) {
+      this.finishMatch(room);
+      return;
+    }
+
+    let changed = false;
+    for (const player of room.players.values()) {
+      if (
+        player.status !== "eliminated" &&
+        player.reloadCompleteAt !== null &&
+        now >= player.reloadCompleteAt
+      ) {
+        const weapon = this.weaponFor(player);
+        if (weapon) {
+          player.ammo = weapon.magazineSize;
+        }
+        player.reloadCompleteAt = null;
+        changed = true;
+      }
+
+      if (
+        player.status === "eliminated" &&
+        player.respawnAt !== null &&
+        now >= player.respawnAt
+      ) {
+        this.respawnPlayer(player, now);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.broadcast(room);
+    }
+  }
+
+  private equipStartingWeapon(player: PlayerRecord): void {
+    const weapon = WEAPONS[FFA_STARTING_WEAPON];
+    player.weaponId = weapon.id;
+    player.ammo = weapon.magazineSize;
+    player.reloadCompleteAt = null;
+    player.nextShotAt = 0;
+  }
+
+  private respawnPlayer(player: PlayerRecord, now: number): void {
+    player.status = "alive";
+    player.health = player.maxHealth;
+    player.shield = 0;
+    player.respawnAt = null;
+    player.spawnLockedUntil = now + this.spawnProtectionMs;
+    this.equipStartingWeapon(player);
   }
 
   private finishMatch(room: MatchRoom): void {
@@ -531,7 +899,31 @@ export class MatchManager {
     room.phase = "finished";
     room.finishedAt = this.now();
     room.endReason = "timer_expired";
+    room.winnerIds = this.computeWinnerIds(room);
+    this.clearCombatTimers(room);
     this.broadcast(room);
+  }
+
+  private computeWinnerIds(room: MatchRoom): string[] {
+    const players = [...room.players.values()];
+    const topScore = Math.max(0, ...players.map((player) => player.score));
+    if (topScore <= 0) {
+      return [];
+    }
+    return players
+      .filter((player) => player.score === topScore)
+      .map((player) => player.id);
+  }
+
+  private clearCombatTimers(room: MatchRoom): void {
+    if (room.tickTimer) {
+      clearInterval(room.tickTimer);
+      room.tickTimer = null;
+    }
+    if (room.endTimer) {
+      clearTimeout(room.endTimer);
+      room.endTimer = null;
+    }
   }
 
   private removePlayer(room: MatchRoom, player: PlayerRecord): void {
@@ -570,10 +962,7 @@ export class MatchManager {
       clearTimeout(room.countdownTimer);
       room.countdownTimer = null;
     }
-    if (room.endTimer) {
-      clearTimeout(room.endTimer);
-      room.endTimer = null;
-    }
+    this.clearCombatTimers(room);
     for (const player of room.players.values()) {
       if (player.graceTimer) {
         clearTimeout(player.graceTimer);
@@ -626,6 +1015,13 @@ export class MatchManager {
       weaponId: null,
       ammo: 0,
       spawnLockedUntil: 0,
+      nextShotAt: 0,
+      reloadCompleteAt: null,
+      respawnAt: null,
+      score: 0,
+      kills: 0,
+      deaths: 0,
+      markerId: this.createMarkerId(),
     };
   }
 
@@ -639,6 +1035,10 @@ export class MatchManager {
       PLAYER_COLORS[room.players.size % PLAYER_COLORS.length] ??
       PLAYER_COLORS[0] ??
       "#5b9dff";
+  }
+
+  private createMarkerId(): string {
+    return randomBytes(8).toString("hex");
   }
 
   private generateUniqueJoinCode(): string {
@@ -702,6 +1102,13 @@ export class MatchManager {
       weaponId: player.weaponId,
       ammo: player.ammo,
       spawnLockedUntil: player.spawnLockedUntil,
+      nextShotAt: player.nextShotAt,
+      reloadCompleteAt: player.reloadCompleteAt,
+      respawnAt: player.respawnAt,
+      score: player.score,
+      kills: player.kills,
+      deaths: player.deaths,
+      markerId: player.markerId,
     };
   }
 }

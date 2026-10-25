@@ -58,6 +58,7 @@ describe("evaluateStart", () => {
     const config: MatchConfig = {
       mode: "assassin",
       durationSeconds: 300,
+      allowManualTargeting: false,
     };
     expect(evaluateStart(input({ config }))).toEqual({
       ok: false,
