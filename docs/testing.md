@@ -59,17 +59,23 @@ on the same LAN.
    code, QR toggle, player list, and host settings.
 2. Open `/join/CODE` in the second tab. Enter a different call sign. Both lobbies show both
    players with synchronized state.
-3. Both players press "I'm ready"; the host's Start button enables.
+3. Select a 2-minute match in the host settings (this resets ready), then both players press
+   "I'm ready". The host's Start button enables.
 4. The host starts. Both clients show the server countdown and then the live screen with the same
    `endsAt`-derived timer and all players initialized to 100 HP / alive.
-5. Reload the host page. The session resumes from `sessionStorage`; there is still exactly one
-   host player in the lobby/match.
-6. Leave from the second tab. It returns home and the remaining client's player list drops to one.
-7. Try a stale/unknown join code and an invalid session: explicit messages appear, no silent
-   failure.
+5. Reload the host page during the match. The session resumes from `sessionStorage`; there is still
+   exactly one host player.
+6. Let the timer expire. Both clients transition to the finished screen with the same "timer
+   expired" result and no fabricated score or winner.
+7. Reload the finished view. The session resumes and the server still reports the finished result.
+8. Leave from the second tab. It returns home and the remaining client's player list drops to one.
+9. Try a stale/unknown join code, a join after the match has started, and an invalid session:
+   explicit messages appear, no silent failure.
 
 Observed during this milestone: all of the above worked on the local machine with two isolated
-clients. Console showed only the Next.js dev tools and HMR connection; no application errors.
+clients, including a 2-minute finished match and a rejected post-start join. Console showed only
+Next.js dev tools and HMR messages caused by restarting the dev server; there were no application
+errors in either client.
 
 This is **not** proof of physical-device compatibility or camera/GPS behavior. Those features are
 not implemented yet.
@@ -77,8 +83,10 @@ not implemented yet.
 ## Gaps in automated coverage
 
 - No browser automation suite (Playwright/Cypress). The UI was exercised manually.
-- No test for the finished-phase UI after a five-minute match; the manager test covers the
-  server-side finish transition.
+- No automated browser test for the finished-phase UI. A 2-minute match was completed manually and
+  both clients reached the finished screen; the manager test covers the server-side transition.
+- No mobile-viewport screenshot or physical-device layout review. A 390 × 844 DOM check found no
+  horizontal overflow on the finished screen.
 - No load/stress test for many rooms or simultaneous joins.
 - No reconnect test across a real network interruption, only close/resume with real sockets.
 - No camera, orientation, geolocation, or shot-validation tests, because the features do not exist.

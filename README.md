@@ -124,7 +124,9 @@ server-initialized values for the combat milestone.
 - `npm run build` produces a working Next.js production build.
 - Browser verification with two isolated client tabs: create, join via QR/code URL, synchronized
   lobby, ready-up, server countdown, live server timer, reload/resume without a duplicate player,
-  and leave/removal from both views.
+  leave/removal from both views, and a 2-minute match reaching the synchronized finished screen.
+- At a 390 × 844 viewport the finished-match layout has no horizontal overflow, and the primary
+  action button is full-width and 54 px tall.
 
 The automated tests use real HTTP and real WebSocket clients, not mocked sockets. See
 [docs/testing.md](docs/testing.md).
